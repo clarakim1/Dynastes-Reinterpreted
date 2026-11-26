@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dynastes, Reinterpreted</title>
+<style>
+:root{--bg:#f3efe6;--fg:#241d14;--mut:#7a6e5c;--panel:rgba(255,252,245,.82);--line:rgba(36,29,20,.15);--acc:#b8731f;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14110d;--fg:#efe7d6;--mut:#a09379;--panel:rgba(30,25,18,.82);--line:rgba(239,231,214,.16);--acc:#e8b04a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14110d;--fg:#efe7d6;--mut:#a09379;--panel:rgba(30,25,18,.82);--line:rgba(239,231,214,.16);--acc:#e8b04a;color-scheme:dark}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;overflow:hidden}
+#stage{position:absolute;inset:0;touch-action:none;cursor:grab}
+#stage:active{cursor:grabbing}
+canvas{display:block}
+header{position:absolute;left:16px;top:calc(12px + env(safe-area-inset-top,0px));pointer-events:none}
+h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.01em}
+header p{margin:4px 0 0;font-size:12px;color:var(--mut)}
+#panel{position:absolute;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:260px;max-width:calc(100% - 24px);background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;padding:14px;font-size:13px}
+.row{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.row label{display:flex;justify-content:space-between;color:var(--mut);font-size:12px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+button,.file{font:inherit;font-size:12px;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.file input{display:none}
+#hint{position:absolute;left:16px;bottom:calc(14px + env(safe-area-inset-bottom,0px));font-size:11px;color:var(--mut);max-width:40%}
+#drop{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:var(--panel);font-size:18px;pointer-events:none}
+@media (max-width:560px){#hint{display:none}#panel{left:12px;right:12px;width:auto}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<header><h1>Dynastes, Reinterpreted</h1><p>장수풍뎅이의 현대적 재해석 · 3D Cell Project 시리즈</p></header>
+<div id="hint">드래그: 회전 · 휠/핀치: 확대 · STL 파일을 화면에 놓으면 내 Fusion 360 모델을 볼 수 있어요</div>
+<div id="drop">STL 파일을 여기에 놓으세요</div>
+<div id="panel">
+  <div class="row"><label>뿔 집게 개폐 <span id="v1">0%</span></label><input id="horn" type="range" min="0" max="100" value="0"></div>
+  <div class="row"><label>딱지날개 열기 <span id="v2">0%</span></label><input id="wing" type="range" min="0" max="100" value="0"></div>
+  <div class="row"><label>분해도 <span id="v3">0%</span></label><input id="expl" type="range" min="0" max="100" value="0"></div>
+  <div class="btns">
+    <button id="cell">세포 격자</button>
+    <button id="rot" class="on">자동 회전</button>
+    <button id="reset">시점 초기화</button>
+    <button id="swap">내 모델 ↔ 해석 모델</button>
+    <button id="orient">모델 방향</button>
+    <label class="file">STL 열기<input id="stl" type="file" accept=".stl"></label>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+var stage=document.getElementById('stage');
+var renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+stage.appendChild(renderer.domElement);
+var scene=new THREE.Scene();
+var camera=new THREE.PerspectiveCamera(40,1,.1,200);
+scene.add(new THREE.HemisphereLight(0xffffff,0x554433,.9));
+var d1=new THREE.DirectionalLight(0xfff0d8,1.1);d1.position.set(4,8,5);scene.add(d1);
+var d2=new THREE.DirectionalLight(0x9fb4ff,.45);d2.position.set(-6,2,-5);scene.add(d2);
+
+var chitin=new THREE.MeshStandardMaterial({color:0x2a2018,roughness:.35,metalness:.35});
+var elyMat=new THREE.MeshStandardMaterial({color:0x7d8a3c,roughness:.3,metalness:.25});
+var hornMat=new THREE.MeshStandardMaterial({color:0x1b140e,roughness:.28,metalness:.5});
+var cellMat=new THREE.MeshBasicMaterial({color:0xe8b04a,wireframe:true,transparent:true,opacity:.4});
+
+var beetle=new THREE.Group();scene.add(beetle);
+var parts=[],cellable=[],cellMeshes=[];
+
+function pivot(x,y,z,dir){var g=new THREE.Group();g.position.set(x,y,z);g.userData.base=g.position.clone();g.userData.dir=new THREE.Vector3(dir[0],dir[1],dir[2]);beetle.add(g);parts.push(g);return g}
+function ell(rx,ry,rz,mat,x,y,z,parent){var m=new THREE.Mesh(new THREE.IcosahedronGeometry(1,4),mat);m.scale.set(rx,ry,rz);m.position.set(x,y,z);parent.add(m);cellable.push(m);return m}
+function taper(pts,r0,r1,mat,parent){
+  var curve=new THREE.CatmullRomCurve3(pts.map(function(p){return new THREE.Vector3(p[0],p[1],p[2])}));
+  var seg=40,rad=12,g=new THREE.TubeGeometry(curve,seg,1,rad,false),pos=g.attributes.position;
+  for(var i=0;i<pos.count;i++){
+    var ring=Math.floor(i/(rad+1)),t=ring/seg,c=curve.getPointAt(Math.min(t,1));
+    var r=r0+(r1-r0)*Math.pow(t,.8);
+    var v=new THREE.Vector3().fromBufferAttribute(pos,i).sub(c).multiplyScalar(r).add(c);
+    pos.setXYZ(i,v.x,v.y,v.z);
+  }
+  g.computeVertexNormals();
+  var m=new THREE.Mesh(g,mat);parent.add(m);
+  var tip=new THREE.Mesh(new THREE.SphereGeometry(r1,12,8),mat);tip.position.copy(curve.getPointAt(1));parent.add(tip);
+  return m;
+}
+function seg(a,b,r,mat,parent){
+  a=new THREE.Vector3(a[0],a[1],a[2]);b=new THREE.Vector3(b[0],b[1],b[2]);
+  var len=a.distanceTo(b),m=new THREE.Mesh(new THREE.CylinderGeometry(r*.8,r,len,8),mat);
+  m.position.copy(a).add(b).multiplyScalar(.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),b.clone().sub(a).normalize());
+  parent.add(m);
+}
+
+/* 몸통 */
+var thorax=pivot(0,0,0,[0,.5,0]);ell(.85,.65,.95,chitin,0,.9,.7,thorax);
+var abdomen=pivot(0,0,0,[0,-.3,-1]);ell(.8,.6,1.2,chitin,0,.8,-1.0,abdomen);
+var head=pivot(0,0,0,[0,0,1.2]);ell(.42,.34,.5,chitin,0,.8,1.95,head);
+/* 뿔 (집게 구조) */
+var tHorn=pivot(0,1.35,1.2,[0,1.2,.6]);
+taper([[0,0,0],[0,.5,.5],[0,.85,1.3],[0,.8,2.2],[0,.55,2.9]],.2,.05,hornMat,tHorn);
+var hHorn=pivot(0,.95,2.3,[0,.6,1.5]);
+taper([[0,0,0],[0,.25,.45],[0,.55,1.0],[0,.9,1.7]],.14,.04,hornMat,hHorn);
+/* 딱지날개 */
+var eL=pivot(.1,1.45,.2,[1.2,.8,-.3]),eR=pivot(-.1,1.45,.2,[-1.2,.8,-.3]);
+ell(.5,.5,1.45,elyMat,.4,-.35,-1.0,eL);ell(.5,.5,1.45,elyMat,-.4,-.35,-1.0,eR);
+/* 다리 */
+var legL=pivot(0,0,0,[1.2,-.4,0]),legR=pivot(0,0,0,[-1.2,-.4,0]);
+[[1.0,.55],[.2,.15],[-.6,-.45]].forEach(function(h){
+  var hz=h[0],dz=h[1];
+  [[1,legL],[-1,legR]].forEach(function(s){
+    var k=s[0],p=s[1];
+    seg([.6*k,.55,hz],[1.4*k,.8,hz+dz*.5],.1,chitin,p);
+    seg([1.4*k,.8,hz+dz*.5],[1.95*k,-.15,hz+dz*1.3],.08,chitin,p);
+    seg([1.95*k,-.15,hz+dz*1.3],[2.15*k,-.5,hz+dz*1.5],.05,chitin,p);
+  });
+});
+/* 세포 격자 오버레이 */
+cellable.forEach(function(m){
+  var c=new THREE.Mesh(m.geometry,cellMat);c.scale.copy(m.scale).multiplyScalar(1.012);c.position.copy(m.position);c.visible=false;
+  m.parent.add(c);cellMeshes.push(c);
+});
+
+/* 사용자 STL */
+var custom=null;
+function parseSTL(buf){
+  var dv=new DataView(buf),n=dv.getUint32(80,true),pos=[];
+  if(84+n*50===buf.byteLength){
+    for(var i=0;i<n;i++){var o=84+i*50+12;for(var j=0;j<9;j++)pos.push(dv.getFloat32(o+j*4,true))}
+  }else{
+    var t=new TextDecoder().decode(buf),re=/vertex\s+(\S+)\s+(\S+)\s+(\S+)/g,m;
+    while((m=re.exec(t)))pos.push(+m[1],+m[2],+m[3]);
+  }
+  var g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.computeVertexNormals();return g;
+}
+function loadFile(f){
+  if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){showBuf(r.result)};
+  r.readAsArrayBuffer(f);
+}
+function showBuf(buf){
+  {
+    try{
+      var g=parseSTL(buf);g.computeBoundingBox();
+      var b=g.boundingBox,c=b.getCenter(new THREE.Vector3()),s=b.getSize(new THREE.Vector3()),k=5/Math.max(s.x,s.y,s.z);
+      g.translate(-c.x,-c.y,-c.z);
+      if(custom)scene.remove(custom);
+      custom=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x8a6a3a,roughness:.4,metalness:.3}));
+      custom.rotation.x=-Math.PI/2;custom.scale.setScalar(k);
+      var w=new THREE.Group();w.add(custom);w.position.y=1;scene.add(w);custom=w;
+      beetle.visible=false;
+    }catch(e){alert('STL을 읽지 못했어요.')}
+  }
+}
+/* 저장소의 stl/dynastes.stl이 있으면 자동으로 불러옴 */
+(function auto(list){
+  if(!list.length)return;
+  fetch(list[0]).then(function(r){if(!r.ok)throw 0;return r.arrayBuffer()}).then(showBuf).catch(function(){auto(list.slice(1))});
+})(['stl/dynastes.stl','../stl/dynastes.stl']);
+document.getElementById('stl').onchange=function(e){loadFile(e.target.files[0])};
+var drop=document.getElementById('drop');
+window.addEventListener('dragover',function(e){e.preventDefault();drop.style.display='flex'});
+window.addEventListener('dragleave',function(e){if(!e.relatedTarget)drop.style.display='none'});
+window.addEventListener('drop',function(e){e.preventDefault();drop.style.display='none';loadFile(e.dataTransfer.files[0])});
+
+/* 컨트롤 */
+function bind(id,out,fn){var el=document.getElementById(id),o=document.getElementById(out);
+  function u(){o.textContent=el.value+'%';fn(el.value/100)}el.oninput=u;u()}
+bind('horn','v1',function(t){tHorn.rotation.x=-t*.55;hHorn.rotation.x=t*.55});
+bind('wing','v2',function(t){eL.rotation.z=t*.8;eR.rotation.z=-t*.8});
+bind('expl','v3',function(t){parts.forEach(function(p){p.position.copy(p.userData.base).addScaledVector(p.userData.dir,t*1.4)})});
+var cellOn=false,rotOn=true;
+var cb=document.getElementById('cell'),rb=document.getElementById('rot');
+cb.onclick=function(){cellOn=!cellOn;cb.classList.toggle('on',cellOn);cellMeshes.forEach(function(m){m.visible=cellOn})};
+rb.onclick=function(){rotOn=!rotOn;rb.classList.toggle('on',rotOn)};
+var th,ph,dist;
+function resetView(){th=.9;ph=1.25;dist=11;beetle.rotation.y=0;if(custom)custom.rotation.y=0}
+document.getElementById('reset').onclick=resetView;resetView();
+document.getElementById('swap').onclick=function(){if(!custom)return;var c=!custom.visible;custom.visible=c;beetle.visible=!c};
+document.getElementById('orient').onclick=function(){if(!custom)return;var m=custom.children[0];m.rotation.x=m.rotation.x?0:-Math.PI/2};
+
+/* 오빗 컨트롤 */
+var ptrs={},lastPinch=0;
+stage.addEventListener('pointerdown',function(e){stage.setPointerCapture(e.pointerId);ptrs[e.pointerId]=[e.clientX,e.clientY];rotOn&&0});
+stage.addEventListener('pointerup',function(e){delete ptrs[e.pointerId];lastPinch=0});
+stage.addEventListener('pointercancel',function(e){delete ptrs[e.pointerId];lastPinch=0});
+stage.addEventListener('pointermove',function(e){
+  var p=ptrs[e.pointerId];if(!p)return;
+  var ids=Object.keys(ptrs);
+  if(ids.length===1){th-=(e.clientX-p[0])*.008;ph=Math.max(.15,Math.min(Math.PI-.15,ph-(e.clientY-p[1])*.008))}
+  ptrs[e.pointerId]=[e.clientX,e.clientY];
+  if(ids.length===2){var a=ptrs[ids[0]],b=ptrs[ids[1]],d=Math.hypot(a[0]-b[0],a[1]-b[1]);
+    if(lastPinch)dist=Math.max(4,Math.min(30,dist*lastPinch/d));lastPinch=d}
+});
+stage.addEventListener('wheel',function(e){e.preventDefault();dist=Math.max(4,Math.min(30,dist*(1+e.deltaY*.001)))},{passive:false});
+
+function resize(){var w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix()}
+window.addEventListener('resize',resize);resize();
+var target=new THREE.Vector3(0,1,.6);
+(function loop(){
+  requestAnimationFrame(loop);
+  if(rotOn&&Object.keys(ptrs).length===0){beetle.rotation.y+=.012;if(custom)custom.rotation.y+=.012}
+  camera.position.set(target.x+dist*Math.sin(ph)*Math.sin(th),target.y+dist*Math.cos(ph),target.z+dist*Math.sin(ph)*Math.cos(th));
+  camera.lookAt(target);renderer.render(scene,camera);
+})();
+})();
+</script>
+</body>
+</html>

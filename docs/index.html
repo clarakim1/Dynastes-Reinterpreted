@@ -42,6 +42,8 @@ button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
     <button id="cell">세포 격자</button>
     <button id="rot" class="on">자동 회전</button>
     <button id="reset">시점 초기화</button>
+    <button id="swap">내 모델 ↔ 해석 모델</button>
+    <button id="orient">모델 방향</button>
     <label class="file">STL 열기<input id="stl" type="file" accept=".stl"></label>
   </div>
 </div>
@@ -134,9 +136,13 @@ function parseSTL(buf){
 function loadFile(f){
   if(!f)return;
   var r=new FileReader();
-  r.onload=function(){
+  r.onload=function(){showBuf(r.result)};
+  r.readAsArrayBuffer(f);
+}
+function showBuf(buf){
+  {
     try{
-      var g=parseSTL(r.result);g.computeBoundingBox();
+      var g=parseSTL(buf);g.computeBoundingBox();
       var b=g.boundingBox,c=b.getCenter(new THREE.Vector3()),s=b.getSize(new THREE.Vector3()),k=5/Math.max(s.x,s.y,s.z);
       g.translate(-c.x,-c.y,-c.z);
       if(custom)scene.remove(custom);
@@ -145,9 +151,13 @@ function loadFile(f){
       var w=new THREE.Group();w.add(custom);w.position.y=1;scene.add(w);custom=w;
       beetle.visible=false;
     }catch(e){alert('STL을 읽지 못했어요.')}
-  };
-  r.readAsArrayBuffer(f);
+  }
 }
+/* 저장소의 stl/dynastes.stl이 있으면 자동으로 불러옴 */
+(function auto(list){
+  if(!list.length)return;
+  fetch(list[0]).then(function(r){if(!r.ok)throw 0;return r.arrayBuffer()}).then(showBuf).catch(function(){auto(list.slice(1))});
+})(['stl/dynastes.stl','../stl/dynastes.stl']);
 document.getElementById('stl').onchange=function(e){loadFile(e.target.files[0])};
 var drop=document.getElementById('drop');
 window.addEventListener('dragover',function(e){e.preventDefault();drop.style.display='flex'});
@@ -165,13 +175,16 @@ var cb=document.getElementById('cell'),rb=document.getElementById('rot');
 cb.onclick=function(){cellOn=!cellOn;cb.classList.toggle('on',cellOn);cellMeshes.forEach(function(m){m.visible=cellOn})};
 rb.onclick=function(){rotOn=!rotOn;rb.classList.toggle('on',rotOn)};
 var th,ph,dist;
-function resetView(){th=.9;ph=1.25;dist=11;if(custom){scene.remove(custom);custom=null}beetle.visible=true}
+function resetView(){th=.9;ph=1.25;dist=11;beetle.rotation.y=0;if(custom)custom.rotation.y=0}
 document.getElementById('reset').onclick=resetView;resetView();
+document.getElementById('swap').onclick=function(){if(!custom)return;var c=!custom.visible;custom.visible=c;beetle.visible=!c};
+document.getElementById('orient').onclick=function(){if(!custom)return;var m=custom.children[0];m.rotation.x=m.rotation.x?0:-Math.PI/2};
 
 /* 오빗 컨트롤 */
 var ptrs={},lastPinch=0;
 stage.addEventListener('pointerdown',function(e){stage.setPointerCapture(e.pointerId);ptrs[e.pointerId]=[e.clientX,e.clientY];rotOn&&0});
 stage.addEventListener('pointerup',function(e){delete ptrs[e.pointerId];lastPinch=0});
+stage.addEventListener('pointercancel',function(e){delete ptrs[e.pointerId];lastPinch=0});
 stage.addEventListener('pointermove',function(e){
   var p=ptrs[e.pointerId];if(!p)return;
   var ids=Object.keys(ptrs);
@@ -187,7 +200,7 @@ window.addEventListener('resize',resize);resize();
 var target=new THREE.Vector3(0,1,.6);
 (function loop(){
   requestAnimationFrame(loop);
-  if(rotOn&&Object.keys(ptrs).length===0)th+=.004;
+  if(rotOn&&Object.keys(ptrs).length===0){beetle.rotation.y+=.012;if(custom)custom.rotation.y+=.012}
   camera.position.set(target.x+dist*Math.sin(ph)*Math.sin(th),target.y+dist*Math.cos(ph),target.z+dist*Math.sin(ph)*Math.cos(th));
   camera.lookAt(target);renderer.render(scene,camera);
 })();

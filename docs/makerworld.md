@@ -11,10 +11,10 @@ Dynastes, Reinterpreted — 움직이는 장수풍뎅이 (뿔 집게 · 날개 �
 - 3D Cell Project의 후속 시리즈
 
 ## 웹 뷰어 (3D 미리 보기)
-https://YOUR_ID.github.io/dynastes-reinterpreted/
+https://clarakim1.github.io/dynastes-reinterpreted/
 
 ## 소스
-https://github.com/YOUR_ID/dynastes-reinterpreted
+https://github.com/clarakim1/dynastes-reinterpreted
 
 ## 출력 정보
 (docs/print-settings.md 내용 요약)
