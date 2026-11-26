@@ -3,7 +3,7 @@
 장수풍뎅이(*Dynastes*)의 해부 구조를 현대적인 기계·생체 디자인으로 재해석한 3D 프린팅 프로젝트입니다.
 3D Cell Project의 "내부 구조를 단면으로 보여주는" 접근을 외골격과 뿔 구조로 확장했습니다.
 
-- 웹 뷰어: https://clarakim1.github.io/dynastes-reinterpreted/ 
+- 웹 뷰어: https://clarakim1.github.io/Dynastes-Reinterpreted/ 
 
 ![preview](images/preview.png)
 
